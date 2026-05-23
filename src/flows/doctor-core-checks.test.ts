@@ -225,6 +225,39 @@ describe("registerCoreHealthChecks", () => {
     );
   });
 
+  it("does not warn when the gateway token SecretRef resolves", async () => {
+    const check = getCheck(createCoreHealthChecks(createDeps()), "core/doctor/gateway-auth");
+    const previousToken = process.env.OPENCLAW_TEST_GATEWAY_TOKEN;
+    process.env.OPENCLAW_TEST_GATEWAY_TOKEN = "resolved-test-token";
+    try {
+      await expect(
+        check.detect({
+          mode: "lint",
+          runtime,
+          cwd: "/tmp/openclaw-test-workspace",
+          cfg: {
+            gateway: {
+              mode: "local",
+              auth: {
+                token: {
+                  source: "env",
+                  provider: "default",
+                  id: "OPENCLAW_TEST_GATEWAY_TOKEN",
+                },
+              },
+            },
+          },
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      if (previousToken === undefined) {
+        delete process.env.OPENCLAW_TEST_GATEWAY_TOKEN;
+      } else {
+        process.env.OPENCLAW_TEST_GATEWAY_TOKEN = previousToken;
+      }
+    }
+  });
+
   it("converts security doctor warnings into health findings", async () => {
     const check = getCheck(
       createCoreHealthChecks(

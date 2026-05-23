@@ -12,6 +12,7 @@ import type { ConfigValidationIssue, OpenClawConfig } from "../config/types.open
 import { resolveSecretInputRef } from "../config/types.secrets.js";
 import { hasAmbiguousGatewayAuthModeConfig } from "../gateway/auth-mode-policy.js";
 import { resolveGatewayAuth } from "../gateway/auth.js";
+import { resolveConfiguredSecretInputString } from "../gateway/resolve-configured-secret-input-string.js";
 import { registerHealthCheck } from "./health-check-registry.js";
 import type { HealthCheck, HealthFinding } from "./health-checks.js";
 
@@ -157,6 +158,16 @@ const gatewayAuthCheck: HealthCheck = {
       return [];
     }
     if (gatewayTokenRef) {
+      const resolved = await resolveConfiguredSecretInputString({
+        config: ctx.cfg,
+        env: process.env,
+        value: ctx.cfg.gateway?.auth?.token,
+        path: "gateway.auth.token",
+        unresolvedReasonStyle: "detailed",
+      });
+      if (resolved.value) {
+        return [];
+      }
       return [
         {
           checkId: "core/doctor/gateway-auth",

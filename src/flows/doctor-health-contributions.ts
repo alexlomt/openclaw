@@ -163,6 +163,8 @@ async function runAuthProfileHealth(ctx: DoctorHealthFlowContext): Promise<void>
 
 async function runGatewayAuthHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { resolveSecretInputRef } = await import("../config/types.secrets.js");
+  const { resolveConfiguredSecretInputString } =
+    await import("../gateway/resolve-configured-secret-input-string.js");
   const { resolveGatewayAuth } = await import("../gateway/auth.js");
   const { note } = await import("../terminal/note.js");
   const { randomToken } = await import("../commands/onboard-helpers.js");
@@ -190,6 +192,16 @@ async function runGatewayAuthHealth(ctx: DoctorHealthFlowContext): Promise<void>
     return;
   }
   if (gatewayTokenRef) {
+    const resolved = await resolveConfiguredSecretInputString({
+      config: ctx.cfg,
+      env: process.env,
+      value: ctx.cfg.gateway?.auth?.token,
+      path: "gateway.auth.token",
+      unresolvedReasonStyle: "detailed",
+    });
+    if (resolved.value) {
+      return;
+    }
     note(
       [
         "Gateway token is managed via SecretRef and is currently unavailable.",
