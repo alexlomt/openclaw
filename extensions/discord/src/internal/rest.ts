@@ -46,6 +46,7 @@ export type RequestData = {
   multipartStyle?: "message" | "form";
   rawBody?: boolean;
   headers?: Record<string, string>;
+  timeoutMs?: number;
 };
 
 export type QueuedRequest = {
@@ -216,7 +217,10 @@ export class RequestClient {
     }
     const body = serializeRequestBody(params.data, headers);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.options.timeout ?? 15_000);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      params.data?.timeoutMs ?? this.options.timeout ?? 15_000,
+    );
     timeout.unref?.();
     this.requestControllers.add(controller);
     try {

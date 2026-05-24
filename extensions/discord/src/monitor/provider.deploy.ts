@@ -22,6 +22,14 @@ function readDeployRequestBody(data?: unknown): unknown {
     : undefined;
 }
 
+function readDeployRequestTimeoutMs(data?: unknown): number | undefined {
+  if (!data || typeof data !== "object" || !("timeoutMs" in data)) {
+    return undefined;
+  }
+  const timeoutMs = (data as { timeoutMs?: unknown }).timeoutMs;
+  return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) ? timeoutMs : undefined;
+}
+
 function wrapDeployRestMethod(params: {
   method: RestMethodName;
   original: RestMethodMap;
@@ -34,6 +42,7 @@ function wrapDeployRestMethod(params: {
   return async (path: string, data?: never, query?: never) => {
     const startedAt = Date.now();
     const body = readDeployRequestBody(data);
+    const requestTimeoutMs = readDeployRequestTimeoutMs(data) ?? params.timeoutMs;
     const commandCount = Array.isArray(body) ? body.length : undefined;
     const bodyBytes =
       body === undefined
@@ -41,7 +50,7 @@ function wrapDeployRestMethod(params: {
         : Buffer.byteLength(typeof body === "string" ? body : JSON.stringify(body), "utf8");
     if (params.shouldLogVerbose()) {
       params.runtime.log?.(
-        `discord startup [${params.accountId}] native-slash-command-deploy-rest:${params.method}:start ${Math.max(0, Date.now() - params.startupStartedAt)}ms path=${path}${typeof commandCount === "number" ? ` commands=${commandCount}` : ""}${typeof bodyBytes === "number" ? ` bytes=${bodyBytes}` : ""}`,
+        `discord startup [${params.accountId}] native-slash-command-deploy-rest:${params.method}:start ${Math.max(0, Date.now() - params.startupStartedAt)}ms path=${path}${typeof commandCount === "number" ? ` commands=${commandCount}` : ""}${typeof bodyBytes === "number" ? ` bytes=${bodyBytes}` : ""}${typeof requestTimeoutMs === "number" ? ` timeout=${requestTimeoutMs}` : ""}`,
       );
     }
     try {
@@ -59,7 +68,7 @@ function wrapDeployRestMethod(params: {
         method: params.method,
         path,
         requestMs,
-        timeoutMs: params.timeoutMs,
+        timeoutMs: requestTimeoutMs,
       });
       const rateLimitDetails = formatDiscordDeployRateLimitDetails(err);
       if (rateLimitDetails) {

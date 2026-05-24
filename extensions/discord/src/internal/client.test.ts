@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { ApplicationCommandType, ComponentType, Routes } from "discord-api-types/v10";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DISCORD_COMMAND_DEPLOY_TIMEOUT_MS } from "./api.commands.js";
 import { Client, ComponentRegistry, type AnyListener } from "./client.js";
 import { BaseCommand } from "./commands.js";
 import { Button, StringSelectMenu, parseCustomId } from "./components.js";
@@ -134,6 +135,7 @@ describe("Client.deployCommands", () => {
           default_member_permissions: null,
         },
       ],
+      timeoutMs: DISCORD_COMMAND_DEPLOY_TIMEOUT_MS,
     });
     expect(put).toHaveBeenCalledTimes(2);
   });
@@ -282,6 +284,7 @@ describe("Client.deployCommands", () => {
         contexts: [0, 1, 2],
         default_member_permissions: null,
       },
+      timeoutMs: DISCORD_COMMAND_DEPLOY_TIMEOUT_MS,
     });
     expect(post).not.toHaveBeenCalled();
     expect(deleteRequest).not.toHaveBeenCalled();
@@ -298,6 +301,10 @@ describe("Client.deployCommands", () => {
 
     expect(get).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith(
+      Routes.applicationCommands("app1"),
+      expect.objectContaining({ timeoutMs: DISCORD_COMMAND_DEPLOY_TIMEOUT_MS }),
+    );
   });
 
   it("skips unchanged command deploys across client restarts using the hash store", async () => {

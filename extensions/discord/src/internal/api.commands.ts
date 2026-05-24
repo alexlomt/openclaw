@@ -1,6 +1,12 @@
 import { Routes, type APIApplicationCommand } from "discord-api-types/v10";
 import type { RequestClient } from "./rest.js";
 
+export const DISCORD_COMMAND_DEPLOY_TIMEOUT_MS = 60_000;
+
+function commandDeployRequest(body?: unknown) {
+  return { body, timeoutMs: DISCORD_COMMAND_DEPLOY_TIMEOUT_MS };
+}
+
 export async function listApplicationCommands(
   rest: RequestClient,
   clientId: string,
@@ -13,7 +19,7 @@ export async function createApplicationCommand(
   clientId: string,
   body: unknown,
 ): Promise<unknown> {
-  return await rest.post(Routes.applicationCommands(clientId), { body });
+  return await rest.post(Routes.applicationCommands(clientId), commandDeployRequest(body));
 }
 
 export async function editApplicationCommand(
@@ -22,7 +28,10 @@ export async function editApplicationCommand(
   commandId: string,
   body: unknown,
 ): Promise<unknown> {
-  return await rest.patch(Routes.applicationCommand(clientId, commandId), { body });
+  return await rest.patch(
+    Routes.applicationCommand(clientId, commandId),
+    commandDeployRequest(body),
+  );
 }
 
 export async function deleteApplicationCommand(
@@ -30,7 +39,7 @@ export async function deleteApplicationCommand(
   clientId: string,
   commandId: string,
 ): Promise<void> {
-  await rest.delete(Routes.applicationCommand(clientId, commandId));
+  await rest.delete(Routes.applicationCommand(clientId, commandId), commandDeployRequest());
 }
 
 export async function overwriteApplicationCommands(
@@ -38,7 +47,7 @@ export async function overwriteApplicationCommands(
   clientId: string,
   body: unknown,
 ): Promise<void> {
-  await rest.put(Routes.applicationCommands(clientId), { body });
+  await rest.put(Routes.applicationCommands(clientId), commandDeployRequest(body));
 }
 
 export async function overwriteGuildApplicationCommands(
@@ -47,5 +56,5 @@ export async function overwriteGuildApplicationCommands(
   guildId: string,
   body: unknown,
 ): Promise<void> {
-  await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body });
+  await rest.put(Routes.applicationGuildCommands(clientId, guildId), commandDeployRequest(body));
 }
