@@ -20,6 +20,11 @@ import {
   resolveStoredModelOverride,
   type CommandArgs,
 } from "openclaw/plugin-sdk/command-auth-native";
+import {
+  formatCommandSurfaceHiddenSummary,
+  planCommandSurface,
+  type CommandSurfaceEntry,
+} from "openclaw/plugin-sdk/command-surface";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { ChannelGroupPolicy } from "openclaw/plugin-sdk/config-contracts";
 import type {
@@ -721,12 +726,20 @@ export const registerTelegramNativeCommands = ({
           agentIds: [boundRoute.agentId],
         })
       : [];
-  const nativeCommands = nativeEnabled
+  const baseNativeCommands = nativeEnabled
+    ? listNativeCommandSpecsForConfig(cfg, {
+        skillCommands: [],
+        provider: "telegram",
+      })
+    : [];
+  const allNativeCommands = nativeEnabled
     ? listNativeCommandSpecsForConfig(cfg, {
         skillCommands,
         provider: "telegram",
       })
     : [];
+  const skillNativeCommands = allNativeCommands.slice(baseNativeCommands.length);
+  const nativeCommands = [...baseNativeCommands, ...skillNativeCommands];
   const reservedCommands = new Set(
     listNativeCommandSpecs().map((command) => normalizeTelegramCommandName(command.name)),
   );
@@ -772,47 +785,75 @@ export const registerTelegramNativeCommands = ({
       return telegramCfg;
     }
   };
-  const allCommandsFull: TelegramMenuCommand[] = [
-    ...nativeCommands
-      .map((command): TelegramMenuCommand | null => {
-        const normalized = normalizeTelegramCommandName(command.name);
-        if (!TELEGRAM_COMMAND_NAME_PATTERN.test(normalized)) {
-          runtime.error?.(
-            danger(
-              `Native command "${command.name}" is invalid for Telegram (resolved to "${normalized}"). Skipping.`,
-            ),
-          );
-          return null;
-        }
-        const menuCommand: TelegramMenuCommand = {
-          command: normalized,
-          description: command.description,
-        };
-        if (command.descriptionLocalizations) {
-          menuCommand.descriptionLocalizations = command.descriptionLocalizations;
-        }
-        return menuCommand;
-      })
-      .filter((cmd) => cmd !== null),
-    ...(nativeEnabled ? pluginCatalog.commands : []),
-    ...customCommands,
+  const toTelegramMenuCommand = (
+    command: (typeof nativeCommands)[number],
+  ): TelegramMenuCommand | null => {
+    const normalized = normalizeTelegramCommandName(command.name);
+    if (!TELEGRAM_COMMAND_NAME_PATTERN.test(normalized)) {
+      runtime.error?.(
+        danger(
+          `Native command "${command.name}" is invalid for Telegram (resolved to "${normalized}"). Skipping.`,
+        ),
+      );
+      return null;
+    }
+    const menuCommand: TelegramMenuCommand = {
+      command: normalized,
+      description: command.description,
+    };
+    if (command.descriptionLocalizations) {
+      menuCommand.descriptionLocalizations = command.descriptionLocalizations;
+    }
+    return menuCommand;
+  };
+  const buildNativeSurfaceEntries = (
+    commands: typeof nativeCommands,
+    kind: CommandSurfaceEntry<TelegramMenuCommand>["kind"],
+  ): Array<CommandSurfaceEntry<TelegramMenuCommand>> =>
+    commands
+      .map((command): TelegramMenuCommand | null => toTelegramMenuCommand(command))
+      .filter((command) => command !== null)
+      .map((command) => ({
+        name: command.command,
+        kind,
+        command,
+      }));
+  const commandSurfaceEntries: Array<CommandSurfaceEntry<TelegramMenuCommand>> = [
+    ...buildNativeSurfaceEntries(baseNativeCommands, "native"),
+    ...customCommands.map((command) => ({
+      name: command.command,
+      kind: "custom" as const,
+      command,
+    })),
+    ...(nativeEnabled ? pluginCatalog.commands : []).map((command) => ({
+      name: command.command,
+      kind: "plugin" as const,
+      command,
+    })),
+    ...buildNativeSurfaceEntries(skillNativeCommands, "skill"),
   ];
-  const {
-    commandsToRegister,
-    totalCommands,
-    maxCommands,
-    overflowCount,
-    maxTotalChars,
-    descriptionTrimmed,
-    textBudgetDropCount,
-  } = buildCappedTelegramMenuCommands({
-    allCommands: allCommandsFull,
+  const surfacePlan = planCommandSurface({
+    entries: commandSurfaceEntries,
+    config: telegramCfg.commands?.surface,
+    providerMax: 100,
   });
-  if (overflowCount > 0) {
+  const { commandsToRegister, maxTotalChars, descriptionTrimmed, textBudgetDropCount } =
+    buildCappedTelegramMenuCommands({
+      allCommands: surfacePlan.published.map((entry) => entry.command),
+      maxCommands: surfacePlan.maxCommands,
+    });
+  if (surfacePlan.overflowCount > 0) {
+    const hiddenSummary = formatCommandSurfaceHiddenSummary(surfacePlan.hiddenByKind);
     runtime.log?.(
-      `Telegram limits bots to ${maxCommands} commands. ` +
-        `${totalCommands} configured; registering first ${maxCommands}. ` +
-        `Use channels.telegram.commands.native: false to disable, or reduce plugin/skill/custom commands.`,
+      `Telegram limits bots to ${surfacePlan.maxCommands} commands. ` +
+        `${surfacePlan.totalCommands} configured; publishing ${commandsToRegister.length} curated commands` +
+        `${hiddenSummary ? ` and hiding ${hiddenSummary} from the native menu` : ""}. ` +
+        "Full native/plugin handlers remain registered; skills remain available through /skill and /commands.",
+    );
+  }
+  if (surfacePlan.missingPinned.length > 0) {
+    runtime.log?.(
+      `Telegram command surface pinned unknown commands: ${surfacePlan.missingPinned.join(", ")}.`,
     );
   }
   if (descriptionTrimmed) {

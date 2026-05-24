@@ -340,6 +340,7 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
     runtime,
     nativeEnabled,
     nativeSkillsEnabled,
+    surfaceConfig: discordCfg.commands?.surface,
     listSkillCommandsForAgents: listSkillCommandsForAgentsForTesting ?? listSkillCommandsForAgents,
     listNativeCommandSpecsForConfig:
       listNativeCommandSpecsForConfigForTesting ?? listNativeCommandSpecsForConfig,

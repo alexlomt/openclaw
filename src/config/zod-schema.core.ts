@@ -1007,10 +1007,19 @@ export const ToolsLinksSchema = z
 
 export const NativeCommandsSettingSchema = z.union([z.boolean(), z.literal("auto")]);
 
+export const ProviderCommandSurfaceSchema = z
+  .object({
+    max: z.number().int().positive().optional(),
+    pinned: z.array(z.string().min(1)).optional(),
+  })
+  .strict()
+  .optional();
+
 export const ProviderCommandsSchema = z
   .object({
     native: NativeCommandsSettingSchema.optional(),
     nativeSkills: NativeCommandsSettingSchema.optional(),
+    surface: ProviderCommandSurfaceSchema,
   })
   .strict()
   .optional();

@@ -29,6 +29,14 @@ export const discordChannelConfigUiHints = {
     label: "Discord Native Skill Commands",
     help: 'Override native skill commands for Discord (bool or "auto").',
   },
+  "commands.surface.max": {
+    label: "Discord Published Command Cap",
+    help: "Maximum commands to publish to Discord slash-command discovery. Discord's 100 global chat-input command hard limit still applies.",
+  },
+  "commands.surface.pinned": {
+    label: "Discord Pinned Commands",
+    help: "Command names to publish first when Discord slash-command discovery is capped.",
+  },
   streaming: {
     label: "Discord Streaming Mode",
     help: 'Unified Discord stream preview mode: "off" | "partial" | "block" | "progress". "progress" keeps a single editable progress draft until final delivery. Legacy boolean/streamMode keys are auto-mapped.',

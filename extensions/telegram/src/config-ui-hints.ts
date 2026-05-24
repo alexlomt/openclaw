@@ -37,6 +37,14 @@ export const telegramChannelConfigUiHints = {
     label: "Telegram Native Skill Commands",
     help: 'Override native skill commands for Telegram (bool or "auto").',
   },
+  "commands.surface.max": {
+    label: "Telegram Published Command Cap",
+    help: "Maximum commands to publish to Telegram's native command menu. Telegram's 100-command hard limit still applies.",
+  },
+  "commands.surface.pinned": {
+    label: "Telegram Pinned Commands",
+    help: "Command names to publish first when the Telegram native command menu is capped.",
+  },
   streaming: {
     label: "Telegram Streaming Mode",
     help: 'Unified Telegram stream preview mode: "off" | "partial" | "block" | "progress" (default: "partial"). "progress" keeps a single editable progress draft until final delivery. Legacy boolean/streamMode keys are detected; run doctor --fix to migrate.',

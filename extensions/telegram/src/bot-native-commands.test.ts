@@ -236,7 +236,7 @@ describe("registerTelegramNativeCommands", () => {
     expect(registeredCommands).toHaveLength(100);
     expect(registeredCommands).toEqual(customCommands.slice(0, 100));
     expect(runtimeLog).toHaveBeenCalledWith(
-      "Telegram limits bots to 100 commands. 120 configured; registering first 100. Use channels.telegram.commands.native: false to disable, or reduce plugin/skill/custom commands.",
+      "Telegram limits bots to 100 commands. 120 configured; publishing 100 curated commands and hiding 20 custom commands from the native menu. Full native/plugin handlers remain registered; skills remain available through /skill and /commands.",
     );
   });
 
@@ -340,6 +340,42 @@ describe("registerTelegramNativeCommands", () => {
     expect(registeredCommandNames).toContain("plugin_status");
     expect(registeredCommandNames).not.toContain("plugin-status");
     expect(registeredCommandNames).not.toContain("custom-bad");
+  });
+
+  it("curates the capped Telegram menu without hiding plugins behind skill overflow", async () => {
+    const { bot, setMyCommands } = createCommandBot();
+    listSkillCommandsForAgents.mockReturnValue(
+      Array.from({ length: 10 }, (_, index) => ({
+        name: `skill_${index}`,
+        skillName: `skill-${index}`,
+        description: `Skill ${index}`,
+      })),
+    );
+    pluginCommandMocks.getPluginCommandSpecs.mockReturnValue([
+      { name: "plugin-sync", description: "Plugin sync" },
+    ] as never);
+
+    registerTelegramNativeCommands({
+      ...createNativeCommandTestParams(
+        {
+          commands: { native: true, nativeSkills: true },
+          agents: { list: [{ id: "main", default: true }] },
+        },
+        { bot },
+      ),
+      telegramCfg: {
+        commands: { surface: { max: 45 } },
+        customCommands: [{ command: "custom-backup", description: "Custom backup" }],
+      } as TelegramAccountConfig,
+    });
+
+    const registeredCommands = await waitForRegisteredCommands(setMyCommands);
+    const registeredCommandNames = registeredCommands.map((entry) => entry.command);
+
+    expect(registeredCommands).toHaveLength(45);
+    expect(registeredCommandNames).toContain("custom_backup");
+    expect(registeredCommandNames).toContain("plugin_sync");
+    expect(registeredCommandNames).not.toContain("skill_9");
   });
 
   it("prefixes native command menu callback data so callback handlers can preserve native routing", async () => {

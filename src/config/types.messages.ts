@@ -197,9 +197,24 @@ export type CommandsConfig = {
   allowFrom?: CommandAllowFrom;
 };
 
+export type ProviderCommandSurfaceConfig = {
+  /**
+   * Maximum commands to publish to the provider-native command menu.
+   * Provider hard limits still apply.
+   */
+  max?: number;
+  /**
+   * Command names to publish first on capped provider command surfaces.
+   * Use command names without the leading slash.
+   */
+  pinned?: string[];
+};
+
 export type ProviderCommandsConfig = {
   /** Override native command registration for this provider (bool or "auto"). */
   native?: NativeCommandsSetting;
   /** Override native skill command registration for this provider (bool or "auto"). */
   nativeSkills?: NativeCommandsSetting;
+  /** Curate which commands are published when the provider command surface is capped. */
+  surface?: ProviderCommandSurfaceConfig;
 };
