@@ -215,6 +215,7 @@ error prompting you to configure one).
       search: {
         enabled: true, // default: true
         provider: "brave", // or omit for auto-detection
+        providers: ["gemini", "brave", "duckduckgo"], // optional ordered fallback chain
         maxResults: 5,
         timeoutSeconds: 30,
         cacheTtlMinutes: 15,
@@ -239,6 +240,13 @@ configured provider only has stale plugin evidence, such as a leftover
 `plugins.entries.<plugin>` block after uninstalling a third-party plugin,
 OpenClaw keeps startup resilient and reports a warning so you can reinstall the
 plugin or run `openclaw doctor --fix` to clean up the stale config.
+
+`tools.web.search.providers` can define an ordered fallback chain. When a chain
+has more than one provider, OpenClaw tries providers in that order and falls
+through only for transient provider failures such as 5xx errors, timeouts,
+temporary quota/availability errors, or provider budget guards. Authentication,
+missing-key, invalid-config, and validation failures remain loud so they are not
+masked by a later fallback.
 
 `web_fetch` fallback provider selection is separate:
 

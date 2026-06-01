@@ -207,6 +207,28 @@ describe("codex app-server session binding", () => {
     expect(binding?.modelProvider).toBeUndefined();
   });
 
+  it("normalizes Codex-native bindings that stored the Codex auth provider", async () => {
+    const sessionFile = path.join(tempDir, "session.json");
+    await writeCodexAppServerBinding(
+      sessionFile,
+      {
+        threadId: "thread-123",
+        cwd: tempDir,
+        authProfileId: "work",
+        model: "gpt-5.4-mini",
+        modelProvider: "openai-codex",
+      },
+      nativeAuthLookup,
+    );
+
+    const raw = await fs.readFile(resolveCodexAppServerBindingPath(sessionFile), "utf8");
+    const binding = await readCodexAppServerBinding(sessionFile, nativeAuthLookup);
+
+    expect(raw).not.toContain('"modelProvider": "openai-codex"');
+    expect(binding?.authProfileId).toBe("work");
+    expect(binding?.modelProvider).toBeUndefined();
+  });
+
   it("normalizes legacy fast service tier bindings to Codex priority", async () => {
     const sessionFile = path.join(tempDir, "session.json");
     await fs.writeFile(

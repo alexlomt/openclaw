@@ -233,6 +233,28 @@ describe("brave web search provider", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts budgetGuard in the Brave plugin config schema", () => {
+    if (!braveManifest.configSchema) {
+      throw new Error("Expected Brave manifest config schema");
+    }
+
+    const result = validateJsonSchemaValue({
+      schema: braveManifest.configSchema,
+      cacheKey: "test:brave-config-schema-budget-guard",
+      value: {
+        webSearch: {
+          budgetGuard: {
+            enabled: true,
+            monthlyLimit: 1000,
+            stopAt: 950,
+          },
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
   it("uses configured Brave baseUrl for web search requests", async () => {
     vi.stubEnv("BRAVE_API_KEY", "");
     const mockFetch = vi.fn(async (_input?: unknown, _init?: unknown) => {

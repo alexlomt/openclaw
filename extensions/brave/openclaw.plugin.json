@@ -29,6 +29,10 @@
     "webSearch.baseUrl": {
       "label": "Brave Search Base URL",
       "help": "Optional Brave-compatible API base URL for trusted proxies. Defaults to https://api.search.brave.com."
+    },
+    "webSearch.budgetGuard": {
+      "label": "Brave Search Budget Guard",
+      "help": "Optional monthly request guard to stop before paid Brave Search API usage."
     }
   },
   "contracts": {
@@ -54,6 +58,26 @@
           },
           "baseUrl": {
             "type": ["string", "object"]
+          },
+          "budgetGuard": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "monthlyLimit": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "stopAt": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "stateDir": {
+                "type": "string"
+              }
+            }
           }
         }
       }

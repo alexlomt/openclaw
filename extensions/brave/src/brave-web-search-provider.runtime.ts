@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { readProviderJsonResponse } from "openclaw/plugin-sdk/provider-http";
 import type { SearchConfigRecord } from "openclaw/plugin-sdk/provider-web-search";
 import {
@@ -39,6 +42,8 @@ import {
 const DEFAULT_BRAVE_BASE_URL = "https://api.search.brave.com";
 const BRAVE_SEARCH_ENDPOINT_PATH = "/res/v1/web/search";
 const BRAVE_LLM_CONTEXT_ENDPOINT_PATH = "/res/v1/llm/context";
+const DEFAULT_BRAVE_SEARCH_MONTHLY_LIMIT = 1000;
+const DEFAULT_BRAVE_SEARCH_STOP_AT = 950;
 const braveHttpLogger = createSubsystemLogger("brave/http");
 type BraveEndpointMode = "selfHosted" | "strict";
 
@@ -58,6 +63,96 @@ type BraveSearchResponse = {
 type BraveHttpDiagnostics = {
   enabled?: boolean;
 };
+
+type BraveBudgetGuard = {
+  enabled: boolean;
+  monthlyLimit: number;
+  stopAt: number;
+  stateDir: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readPositiveInteger(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string" && /^\d+$/u.test(value.trim())) {
+    const parsed = Number.parseInt(value.trim(), 10);
+    return parsed > 0 ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function resolveBraveBudgetGuard(
+  braveConfig: { budgetGuard?: unknown } | undefined,
+): BraveBudgetGuard | undefined {
+  const rawGuard = isRecord(braveConfig?.budgetGuard) ? braveConfig.budgetGuard : {};
+  const enabled =
+    rawGuard.enabled === true ||
+    process.env.OPENCLAW_BRAVE_SEARCH_BUDGET_GUARD === "1" ||
+    process.env.OPENCLAW_BRAVE_SEARCH_BUDGET_GUARD === "true";
+  if (!enabled) {
+    return undefined;
+  }
+  const monthlyLimit =
+    readPositiveInteger(rawGuard.monthlyLimit) ??
+    readPositiveInteger(process.env.OPENCLAW_BRAVE_SEARCH_MONTHLY_LIMIT) ??
+    DEFAULT_BRAVE_SEARCH_MONTHLY_LIMIT;
+  const stopAt =
+    readPositiveInteger(rawGuard.stopAt) ??
+    readPositiveInteger(process.env.OPENCLAW_BRAVE_SEARCH_STOP_AT) ??
+    Math.min(monthlyLimit, DEFAULT_BRAVE_SEARCH_STOP_AT);
+  const stateDirRaw =
+    typeof rawGuard.stateDir === "string" && rawGuard.stateDir.trim()
+      ? rawGuard.stateDir.trim()
+      : process.env.OPENCLAW_BRAVE_SEARCH_BUDGET_STATE_DIR;
+  const stateDir =
+    stateDirRaw && stateDirRaw.trim()
+      ? stateDirRaw.trim()
+      : path.join(os.homedir(), ".openclaw", "runtime", "web-search");
+  return {
+    enabled: true,
+    monthlyLimit,
+    stopAt: Math.min(stopAt, monthlyLimit),
+    stateDir,
+  };
+}
+
+function recordBraveBudgetUse(guard: BraveBudgetGuard | undefined): void {
+  if (!guard?.enabled) {
+    return;
+  }
+  const month = new Date().toISOString().slice(0, 7);
+  fs.mkdirSync(guard.stateDir, { recursive: true, mode: 0o700 });
+  const statePath = path.join(guard.stateDir, `brave-search-usage-${month}.json`);
+  let count = 0;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    if (parsed?.month === month && Number.isInteger(parsed.count) && parsed.count > 0) {
+      count = parsed.count;
+    }
+  } catch {
+    count = 0;
+  }
+  if (count >= guard.stopAt) {
+    throw new Error(
+      `Brave Search budget guard reached ${count}/${guard.monthlyLimit} monthly requests; refusing to spend more Brave quota before paid usage starts.`,
+    );
+  }
+  const next = {
+    month,
+    count: count + 1,
+    monthlyLimit: guard.monthlyLimit,
+    stopAt: guard.stopAt,
+    updatedAt: new Date().toISOString(),
+  };
+  const tmpPath = `${statePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(tmpPath, statePath);
+}
 
 function logBraveHttp(
   diagnostics: BraveHttpDiagnostics | undefined,
@@ -356,6 +451,7 @@ export async function executeBraveSearch(
   const braveMode = resolveBraveMode(braveConfig);
   const braveBaseUrl = resolveBraveBaseUrl(braveConfig);
   const braveEndpointMode = await validateBraveBaseUrl(braveBaseUrl);
+  const budgetGuard = resolveBraveBudgetGuard(braveConfig);
   const query = readStringParam(args, "query", { required: true });
   const count =
     readNumberParam(args, "count", { integer: true }) ?? searchConfig?.maxResults ?? undefined;
@@ -486,6 +582,7 @@ export async function executeBraveSearch(
   const cacheTtlMs = resolveSearchCacheTtlMs(searchConfig);
 
   if (braveMode === "llm-context") {
+    recordBraveBudgetUse(budgetGuard);
     const { results, sources } = await runBraveLlmContextSearch({
       baseUrl: braveBaseUrl,
       endpointMode: braveEndpointMode,
@@ -530,6 +627,7 @@ export async function executeBraveSearch(
     return payload;
   }
 
+  recordBraveBudgetUse(budgetGuard);
   const results = await runBraveWebSearch({
     baseUrl: braveBaseUrl,
     endpointMode: braveEndpointMode,

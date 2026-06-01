@@ -751,6 +751,108 @@ describe("web search runtime", () => {
     ).rejects.toThrow("google aborted");
   });
 
+  it("falls back through the configured provider chain for transient provider failures", async () => {
+    resolveRuntimeWebSearchProvidersMock.mockReturnValue([
+      createGoogleSearchProvider({
+        createTool: () => ({
+          description: "google",
+          parameters: {},
+          execute: async () => {
+            throw new Error("Gemini search provider error (503): overloaded");
+          },
+        }),
+      }),
+      createDuckDuckGoSearchProvider(),
+    ]);
+
+    await expect(
+      runWebSearch({
+        config: {
+          tools: {
+            web: {
+              search: {
+                provider: "google",
+                providers: ["google", "duckduckgo"],
+              },
+            },
+          },
+        },
+        args: { query: "configured-chain" },
+      }),
+    ).resolves.toEqual({
+      provider: "duckduckgo",
+      result: { query: "configured-chain", provider: "duckduckgo" },
+    });
+  });
+
+  it("does not hide auth failures in the configured provider chain", async () => {
+    resolveRuntimeWebSearchProvidersMock.mockReturnValue([
+      createGoogleSearchProvider({
+        createTool: () => ({
+          description: "google",
+          parameters: {},
+          execute: async () => {
+            throw new Error("Gemini search auth failed: invalid API key");
+          },
+        }),
+      }),
+      createDuckDuckGoSearchProvider(),
+    ]);
+
+    await expect(
+      runWebSearch({
+        config: {
+          tools: {
+            web: {
+              search: {
+                provider: "google",
+                providers: ["google", "duckduckgo"],
+              },
+            },
+          },
+        },
+        args: { query: "configured-chain-auth" },
+      }),
+    ).rejects.toThrow("invalid API key");
+  });
+
+  it("scopes provider loading to every configured provider in the chain", async () => {
+    resolveManifestContractOwnerPluginIdMock.mockImplementation(({ value }) => {
+      if (value === "gemini") {
+        return "google";
+      }
+      if (value === "duckduckgo") {
+        return "duckduckgo";
+      }
+      return undefined;
+    });
+    resolveRuntimeWebSearchProvidersMock.mockReturnValue([
+      createGoogleSearchProvider({ id: "gemini", pluginId: "google" }),
+      createDuckDuckGoSearchProvider(),
+    ]);
+
+    await expect(
+      runWebSearch({
+        config: {
+          tools: {
+            web: {
+              search: {
+                provider: "gemini",
+                providers: ["gemini", "duckduckgo"],
+              },
+            },
+          },
+        },
+        args: { query: "configured-chain-scope" },
+      }),
+    ).resolves.toMatchObject({ provider: "gemini" });
+
+    expect(mockCallParam(resolveRuntimeWebSearchProvidersMock).onlyPluginIds).toEqual([
+      "google",
+      "duckduckgo",
+    ]);
+  });
+
   it("scopes runtime provider loading to the configured bundled web_search provider", async () => {
     resolveManifestContractOwnerPluginIdMock.mockImplementation(({ value }) =>
       value === "duckduckgo" ? "duckduckgo" : undefined,

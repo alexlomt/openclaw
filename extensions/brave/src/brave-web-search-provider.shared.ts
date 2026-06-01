@@ -6,6 +6,7 @@ import {
 type BraveConfig = {
   baseUrl?: unknown;
   mode?: string;
+  budgetGuard?: unknown;
 };
 
 type BraveLlmContextResult = { url: string; title: string; snippets: string[] };

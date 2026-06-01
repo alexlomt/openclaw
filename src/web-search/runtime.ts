@@ -232,6 +232,27 @@ function resolveExplicitWebSearchProviderId(params: {
   return undefined;
 }
 
+function resolveConfiguredWebSearchProviderIds(search?: WebSearchConfig): string[] {
+  const rawProviders = search && "providers" in search ? search.providers : undefined;
+  if (!Array.isArray(rawProviders)) {
+    return [];
+  }
+  const providerIds: string[] = [];
+  const seen = new Set<string>();
+  for (const rawProvider of rawProviders) {
+    if (typeof rawProvider !== "string") {
+      continue;
+    }
+    const providerId = normalizeLowercaseStringOrEmpty(rawProvider);
+    if (!providerId || seen.has(providerId)) {
+      continue;
+    }
+    seen.add(providerId);
+    providerIds.push(providerId);
+  }
+  return providerIds;
+}
+
 function resolveExplicitWebSearchProviderPluginIds(params: {
   config?: OpenClawConfig;
   search?: WebSearchConfig;
@@ -239,16 +260,29 @@ function resolveExplicitWebSearchProviderPluginIds(params: {
   providerId?: string;
   includeRuntimeSelection?: boolean;
 }): readonly string[] | undefined {
-  const providerId = resolveExplicitWebSearchProviderId(params);
-  if (!providerId) {
+  const providerIds = [
+    ...resolveConfiguredWebSearchProviderIds(params.search),
+    resolveExplicitWebSearchProviderId(params),
+  ].filter((providerId): providerId is string => Boolean(providerId));
+  const uniqueProviderIds = [...new Set(providerIds)];
+  if (uniqueProviderIds.length === 0) {
     return undefined;
   }
-  const ownerPluginId = resolveManifestContractOwnerPluginId({
-    config: params.config,
-    contract: "webSearchProviders",
-    value: providerId,
-  });
-  return ownerPluginId ? [ownerPluginId] : undefined;
+  const ownerPluginIds: string[] = [];
+  for (const providerId of uniqueProviderIds) {
+    const ownerPluginId = resolveManifestContractOwnerPluginId({
+      config: params.config,
+      contract: "webSearchProviders",
+      value: providerId,
+    });
+    if (!ownerPluginId) {
+      return undefined;
+    }
+    if (!ownerPluginIds.includes(ownerPluginId)) {
+      ownerPluginIds.push(ownerPluginId);
+    }
+  }
+  return ownerPluginIds;
 }
 
 function resolveWebSearchProviderLoadScope(params: {
@@ -364,11 +398,17 @@ function resolveWebSearchCandidates(
     return [];
   }
 
+  const configuredProviderIds = resolveConfiguredWebSearchProviderIds(search);
   const preferredIds = [
     options?.providerId,
-    runtimeWebSearch?.selectedProvider,
-    runtimeWebSearch?.providerConfigured,
-    resolveWebSearchProviderId({ config, agentDir: options?.agentDir, search, providers }),
+    ...configuredProviderIds,
+    ...(configuredProviderIds.length > 0
+      ? []
+      : [
+          runtimeWebSearch?.selectedProvider,
+          runtimeWebSearch?.providerConfigured,
+          resolveWebSearchProviderId({ config, agentDir: options?.agentDir, search, providers }),
+        ]),
   ].filter(
     (value, index, array): value is string => Boolean(value) && array.indexOf(value) === index,
   );
@@ -376,6 +416,11 @@ function resolveWebSearchCandidates(
   const explicitProviderId = options?.providerId?.trim();
   if (explicitProviderId && !providers.some((entry) => entry.id === explicitProviderId)) {
     throw new Error(`Unknown web_search provider "${explicitProviderId}".`);
+  }
+  for (const providerId of configuredProviderIds) {
+    if (!providers.some((entry) => entry.id === providerId)) {
+      throw new Error(`Unknown web_search provider "${providerId}".`);
+    }
   }
 
   const orderedProviders = [
@@ -396,9 +441,16 @@ function hasExplicitWebSearchSelection(params: {
   if (params.providerId?.trim()) {
     return true;
   }
+  const configuredProviderIds = resolveConfiguredWebSearchProviderIds(params.search);
   const availableProviderIds = new Set(
     (params.providers ?? []).map((provider) => normalizeLowercaseStringOrEmpty(provider.id)),
   );
+  if (configuredProviderIds.length > 1) {
+    return false;
+  }
+  if (configuredProviderIds.length === 1 && availableProviderIds.has(configuredProviderIds[0])) {
+    return true;
+  }
   const configuredProviderId =
     params.search && "provider" in params.search && typeof params.search.provider === "string"
       ? normalizeLowercaseStringOrEmpty(params.search.provider)
@@ -427,6 +479,31 @@ function isStructuredAvailabilityError(result: unknown): result is { error: stri
   return typeof error === "string" && /^missing_[a-z0-9_]*api_key$/i.test(error);
 }
 
+function hasConfiguredWebSearchFallback(search?: WebSearchConfig): boolean {
+  return resolveConfiguredWebSearchProviderIds(search).length > 1;
+}
+
+function isFallbackSafeWebSearchProviderError(error: unknown): boolean {
+  const message = String(error instanceof Error ? error.message : error).toLowerCase();
+  if (
+    /\b(api[_ -]?key|auth|unauthori[sz]ed|forbidden|invalid|missing_[a-z0-9_]*api_key)\b/u.test(
+      message,
+    ) ||
+    message.includes("base url must")
+  ) {
+    return false;
+  }
+  if (message.includes("budget guard")) {
+    return true;
+  }
+  return (
+    /\b(408|409|425|429|5\d\d)\b/u.test(message) ||
+    /\b(timeout|timed out|temporar(?:y|ily)|unavailable|overloaded|econnreset|etimedout|eai_again)\b/u.test(
+      message,
+    )
+  );
+}
+
 export async function runWebSearch(params: RunWebSearchParams): Promise<RunWebSearchResult> {
   const config = resolveWebSearchRuntimeConfig({
     config: params.config,
@@ -449,6 +526,7 @@ export async function runWebSearch(params: RunWebSearchParams): Promise<RunWebSe
     providerId: params.providerId,
     providers: candidates,
   });
+  const configuredFallback = allowFallback && hasConfiguredWebSearchFallback(search);
   let lastError: unknown;
   let sawUnavailableProvider = false;
 
@@ -470,6 +548,9 @@ export async function runWebSearch(params: RunWebSearchParams): Promise<RunWebSe
       const executed = await definition.execute(params.args, { signal: params.signal });
       if (allowFallback && isStructuredAvailabilityError(executed)) {
         lastError = new Error(`web_search provider "${candidate.id}" returned ${executed.error}`);
+        if (configuredFallback) {
+          throw lastError;
+        }
         continue;
       }
       return {
@@ -479,6 +560,9 @@ export async function runWebSearch(params: RunWebSearchParams): Promise<RunWebSe
     } catch (error) {
       lastError = error;
       if (!allowFallback) {
+        throw error;
+      }
+      if (configuredFallback && !isFallbackSafeWebSearchProviderError(error)) {
         throw error;
       }
     }
@@ -497,6 +581,8 @@ export const testing = {
   resolveWebSearchCandidates,
   resolveExplicitWebSearchProviderId,
   resolveExplicitWebSearchProviderPluginIds,
+  resolveConfiguredWebSearchProviderIds,
   hasExplicitWebSearchSelection,
+  isFallbackSafeWebSearchProviderError,
 };
 export { testing as __testing };

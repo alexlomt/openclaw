@@ -26,6 +26,11 @@ OpenClaw supports Brave Search API as a `web_search` provider.
             apiKey: "BRAVE_API_KEY_HERE",
             mode: "web", // or "llm-context"
             baseUrl: "https://api.search.brave.com", // optional proxy/base URL override
+            budgetGuard: {
+              enabled: true,
+              monthlyLimit: 1000,
+              stopAt: 950,
+            },
           },
         },
       },
@@ -50,6 +55,11 @@ Legacy `tools.web.search.apiKey` still loads through the compatibility shim, but
 
 - `web` (default): normal Brave web search with titles, URLs, and snippets
 - `llm-context`: Brave LLM Context API with pre-extracted text chunks and sources for grounding
+
+`webSearch.budgetGuard` stops Brave requests before a monthly free-credit budget
+is exhausted. The default guard values are `monthlyLimit: 1000` and `stopAt:
+950` when the guard is enabled. Usage is counted only after cache misses, before
+the outbound Brave API call.
 
 `webSearch.baseUrl` can point Brave requests at a trusted Brave-compatible proxy
 or gateway. OpenClaw appends `/res/v1/web/search` or `/res/v1/llm/context` to

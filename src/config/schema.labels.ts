@@ -313,6 +313,7 @@ export const FIELD_LABELS: Record<string, string> = {
   "tools.message.actions.allow": "Message Action Allowlist",
   "tools.web.search.enabled": "Enable Web Search Tool",
   "tools.web.search.provider": "Web Search Provider",
+  "tools.web.search.providers": "Web Search Provider Fallback Chain",
   "tools.web.search.maxResults": "Web Search Max Results",
   "tools.web.search.timeoutSeconds": "Web Search Timeout (sec)",
   "tools.web.search.cacheTtlMinutes": "Web Search Cache TTL (min)",

@@ -17,6 +17,10 @@ import type { CodexServiceTier } from "./protocol.js";
 
 const CODEX_APP_SERVER_NATIVE_AUTH_PROVIDER = "openai-codex";
 const PUBLIC_OPENAI_MODEL_PROVIDER = "openai";
+const CODEX_NATIVE_AUTH_MODEL_PROVIDERS = new Set([
+  PUBLIC_OPENAI_MODEL_PROVIDER,
+  CODEX_APP_SERVER_NATIVE_AUTH_PROVIDER,
+]);
 
 type ProviderAuthAliasLookupParams = Parameters<typeof resolveProviderIdForAuth>[1];
 type ProviderAuthAliasConfig = NonNullable<ProviderAuthAliasLookupParams>["config"];
@@ -335,7 +339,7 @@ export function normalizeCodexAppServerBindingModelProvider(params: {
   }
   if (
     isCodexAppServerNativeAuthProfile(params) &&
-    modelProvider.toLowerCase() === PUBLIC_OPENAI_MODEL_PROVIDER
+    CODEX_NATIVE_AUTH_MODEL_PROVIDERS.has(modelProvider.toLowerCase())
   ) {
     return undefined;
   }
