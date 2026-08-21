@@ -7,7 +7,7 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CodexAppServerClientFactory } from "./client-factory.js";
-import type { CodexAppServerClient } from "./client.js";
+import { CodexAppServerRpcError, type CodexAppServerClient } from "./client.js";
 import { maybeCompactCodexAppServerSession as maybeCompactCodexAppServerSessionImpl } from "./compact.js";
 import type { CodexServerNotification } from "./protocol.js";
 import { readCodexAppServerBinding, writeCodexAppServerBinding } from "./session-binding.js";
@@ -352,6 +352,38 @@ describe("maybeCompactCodexAppServerSession", () => {
     expect(result.compacted).toBe(false);
     expect(result.reason).toBe("thread not found: thread-1");
     expect(result.failure?.reason).toBe("stale_thread_binding");
+    expect(result.result).toBeUndefined();
+  });
+
+  it("reports native compaction endpoint 404s as fallbackable unavailable compaction", async () => {
+    const fake = createFakeCodexClient();
+    fake.request.mockRejectedValueOnce(
+      new CodexAppServerRpcError(
+        {
+          message: "thread/compact/start failed",
+          data: { codexErrorInfo: { httpStatusCode: 404 } },
+        },
+        "thread/compact/start",
+      ),
+    );
+    setCodexAppServerClientFactoryForTest(async () => fake.client);
+    const sessionFile = await writeTestBinding();
+
+    const result = requireCompactResult(
+      await startCompaction(sessionFile, { currentTokenCount: 456 }),
+    );
+
+    expect(fake.request).toHaveBeenCalledWith("thread/compact/start", { threadId: "thread-1" });
+    expect(await readCodexAppServerBinding(sessionFile)).toBeDefined();
+    expect(result.ok).toBe(false);
+    expect(result.compacted).toBe(false);
+    expect(result.reason).toContain("thread/compact/start failed");
+    expect(result.failure).toEqual({
+      reason: "native_compaction_unavailable",
+      code: "codex_native_compaction_unavailable",
+      status: 404,
+      rawError: expect.stringContaining("thread/compact/start failed"),
+    });
     expect(result.result).toBeUndefined();
   });
 

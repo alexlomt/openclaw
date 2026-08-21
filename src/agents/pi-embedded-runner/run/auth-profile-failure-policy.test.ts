@@ -60,6 +60,20 @@ describe("resolveAuthProfileFailureReason", () => {
     ).toBeNull();
   });
 
+  it("does not persist missing-model responses as auth-profile health", () => {
+    expect(
+      resolveAuthProfileFailureReason({
+        failoverReason: "model_not_found",
+      }),
+    ).toBeNull();
+    expect(
+      resolveAuthProfileFailureReason({
+        failoverReason: "model_not_found",
+        policy: "shared",
+      }),
+    ).toBeNull();
+  });
+
   it("does not persist empty responses as auth-profile health", () => {
     expect(
       resolveAuthProfileFailureReason({

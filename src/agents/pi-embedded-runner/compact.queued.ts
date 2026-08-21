@@ -54,7 +54,8 @@ function shouldFallbackAfterHarnessCompaction(
   return (
     result?.ok === false &&
     (result.failure?.reason === "missing_thread_binding" ||
-      result.failure?.reason === "stale_thread_binding")
+      result.failure?.reason === "stale_thread_binding" ||
+      result.failure?.reason === "native_compaction_unavailable")
   );
 }
 

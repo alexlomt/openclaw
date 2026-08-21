@@ -13,7 +13,11 @@ import {
   defaultCodexAppServerClientFactory,
   type CodexAppServerClientFactory,
 } from "./client-factory.js";
-import type { CodexAppServerClient, CodexServerNotificationHandler } from "./client.js";
+import {
+  CodexAppServerRpcError,
+  type CodexAppServerClient,
+  type CodexServerNotificationHandler,
+} from "./client.js";
 import { resolveCodexAppServerRuntimeOptions } from "./config.js";
 import { isJsonObject, type CodexServerNotification, type JsonObject } from "./protocol.js";
 import { resolveCodexNativeExecutionBlock } from "./sandbox-guard.js";
@@ -393,6 +397,21 @@ async function compactCodexNativeThread(
           recovery: "stale_thread_binding",
         });
       }
+      if (isCodexNativeCompactionUnavailableError(error)) {
+        const status = readCompactionErrorStatus(error);
+        const reason = formatCompactionError(error);
+        return {
+          ok: false,
+          compacted: false,
+          reason,
+          failure: {
+            reason: "native_compaction_unavailable",
+            code: "codex_native_compaction_unavailable",
+            ...(status ? { status } : {}),
+            rawError: reason,
+          },
+        };
+      }
       if (
         isCodexNativeCompactionTimeoutError(error, binding.threadId) &&
         attempt < MAX_CODEX_NATIVE_COMPACTION_ATTEMPTS
@@ -494,6 +513,55 @@ function failedCodexThreadBindingCompactionResult(
 
 function isCodexThreadNotFoundError(error: unknown): boolean {
   return formatCompactionError(error).toLowerCase().includes("thread not found");
+}
+
+function isCodexNativeCompactionUnavailableError(error: unknown): boolean {
+  const status = readCompactionErrorStatus(error);
+  if (status === 404) {
+    return true;
+  }
+  const message = formatCompactionError(error).toLowerCase();
+  return /\b(?:http\s*)?404\b/u.test(message) || /\bstatus(?:\s+code)?\s+404\b/u.test(message);
+}
+
+function readCompactionErrorStatus(error: unknown): number | undefined {
+  const value = error instanceof CodexAppServerRpcError ? findHttpStatus(error.data) : undefined;
+  if (typeof value === "number") {
+    return value;
+  }
+  const message = formatCompactionError(error);
+  const match = message.match(/\b(?:http\s*)?(404)\b|\bstatus(?:\s+code)?\s+(404)\b/iu);
+  const raw = match?.[1] ?? match?.[2];
+  return raw ? Number(raw) : undefined;
+}
+
+function findHttpStatus(value: unknown, depth = 0): number | undefined {
+  if (!value || typeof value !== "object" || depth > 4) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const status = findHttpStatus(item, depth + 1);
+      if (status !== undefined) {
+        return status;
+      }
+    }
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ["httpStatusCode", "statusCode", "status"]) {
+    const status = record[key];
+    if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599) {
+      return status;
+    }
+  }
+  for (const nested of Object.values(record)) {
+    const status = findHttpStatus(nested, depth + 1);
+    if (status !== undefined) {
+      return status;
+    }
+  }
+  return undefined;
 }
 
 function isCodexNativeCompactionTimeoutError(error: unknown, threadId: string): boolean {
